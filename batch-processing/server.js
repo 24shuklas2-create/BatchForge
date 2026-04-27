@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { EventEmitter } = require("events");
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 const bus = new EventEmitter();
 
 // In-memory state
