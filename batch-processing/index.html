@@ -664,7 +664,7 @@
 <div class="conn-banner" id="conn-banner">⚠ Connection lost — retrying…</div>
 
 <script>
-  const SERVER = `http://${location.hostname}:8080`;
+  const SERVER = location.origin;
   let es = null;
   let myJobs = [];
   let submitting = false;
