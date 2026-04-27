@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BatchForge — Distributed Processing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:       #0a0b0d;
+    --bg2:      #0f1114;
+    --bg3:      #161a1f;
+    --border:   #1e2530;
+    --accent:   #00e5a0;
+    --accent2:  #ff4d6d;
+    --accent3:  #fbbf24;
+    --accent4:  #60a5fa;
+    --text:     #e2e8f0;
+    --muted:    #4a5568;
+    --mono:     'Space Mono', monospace;
+    --sans:     'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Glow orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: .18;
+  }
+  .orb-1 { width: 600px; height: 600px; background: var(--accent); top: -200px; right: -200px; }
+  .orb-2 { width: 400px; height: 400px; background: var(--accent2); bottom: -150px; left: -150px; }
+
+  /* HEADER */
+  header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    background: rgba(10,11,13,.7);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: grid;
+    place-items: center;
+    animation: pulse-icon 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse-icon {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,229,160,.4); }
+    50% { box-shadow: 0 0 0 12px rgba(0,229,160,0); }
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -.5px;
+    color: var(--text);
+  }
+  .logo-text span { color: var(--accent); }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+    margin-right: 6px;
+    box-shadow: 0 0 8px var(--accent);
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .4; }
+  }
+
+  /* LAYOUT */
+  main {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 1px;
+    height: calc(100vh - 65px);
+    background: var(--border);
+  }
+
+  .panel {
+    background: var(--bg);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .panel-inner { padding: 28px 32px; }
+
+  .panel-title {
+    font-size: 10px;
+    font-family: var(--mono);
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .panel-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* STATS STRIP */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+
+  .stat-cell {
+    background: var(--bg2);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+    overflow: hidden;
+    transition: background .2s;
+  }
+
+  .stat-cell:hover { background: var(--bg3); }
+
+  .stat-cell::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+  }
+
+  .stat-cell.total::before  { background: var(--accent4); }
+  .stat-cell.active::before { background: var(--accent3); }
+  .stat-cell.done::before   { background: var(--accent); }
+  .stat-cell.error::before  { background: var(--accent2); }
+
+  .stat-num {
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transition: all .3s;
+  }
+
+  .stat-cell.total  .stat-num { color: var(--accent4); }
+  .stat-cell.active .stat-num { color: var(--accent3); }
+  .stat-cell.done   .stat-num { color: var(--accent); }
+  .stat-cell.error  .stat-num { color: var(--accent2); }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* FORM */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .field select,
+  .field input {
+    width: 100%;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5568' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
+
+  .field select:focus,
+  .field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,229,160,.12);
+  }
+
+  .field input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  .btn-row { display: flex; gap: 12px; margin-bottom: 28px; }
+
+  .btn {
+    flex: 1;
+    padding: 13px 20px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: all .2s;
+    letter-spacing: .3px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0a0b0d;
+    box-shadow: 0 0 20px rgba(0,229,160,.25);
+  }
+  .btn-primary:hover {
+    background: #00ffb3;
+    box-shadow: 0 0 30px rgba(0,229,160,.4);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active { transform: translateY(0); }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--muted); color: var(--text); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--accent2);
+    border: 1px solid rgba(255,77,109,.3);
+    font-size: 12px;
+    padding: 8px 14px;
+    flex: 0;
+  }
+  .btn-danger:hover { background: rgba(255,77,109,.1); }
+
+  /* THROUGHPUT BAR */
+  .throughput-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+
+  .throughput-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 80px;
+  }
+
+  .throughput-track {
+    flex: 1;
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+
+  .throughput-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #00ffb3);
+    border-radius: 99px;
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .throughput-val {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    min-width: 70px;
+    text-align: right;
+  }
+
+  /* CLIENTS */
+  .clients-section { margin-bottom: 28px; }
+
+  .client-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    transition: border-color .2s;
+  }
+
+  .client-row:hover { border-color: var(--accent4); }
+
+  .client-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    flex-shrink: 0;
+  }
+
+  .client-ip {
+    font-family: var(--mono);
+    font-size: 12px;
+    flex: 1;
+  }
+
+  .client-stats {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .client-stats .ok { color: var(--accent); }
+  .client-stats .err { color: var(--accent2); }
+
+  /* JOB LIST */
+  .jobs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .jobs-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .jobs-title span {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .job-item {
+    display: grid;
+    grid-template-columns: 60px 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    transition: all .2s;
+    animation: slideIn .3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .job-item:hover { background: var(--bg3); }
+  .job-item.status-done   { border-left: 2px solid var(--accent); }
+  .job-item.status-error  { border-left: 2px solid var(--accent2); }
+  .job-item.status-active { border-left: 2px solid var(--accent3); }
+  .job-item.status-queued { border-left: 2px solid var(--muted); }
+
+  .job-id {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .job-type {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+
+  .job-size {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .job-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 99px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .badge-done   { background: rgba(0,229,160,.15); color: var(--accent); }
+  .badge-error  { background: rgba(255,77,109,.15); color: var(--accent2); }
+  .badge-active { background: rgba(251,191,36,.15);  color: var(--accent3); animation: badge-pulse 1s ease-in-out infinite; }
+  .badge-queued { background: rgba(74,85,104,.2);    color: var(--muted); }
+
+  @keyframes badge-pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+
+  /* SERVER LOG */
+  .log-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.8;
+    max-height: 240px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .log-box::-webkit-scrollbar { width: 3px; }
+  .log-box::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-line { display: flex; gap: 10px; align-items: flex-start; }
+  .log-ts  { color: var(--muted); flex-shrink: 0; }
+  .log-msg.info    { color: #94a3b8; }
+  .log-msg.success { color: var(--accent); }
+  .log-msg.error   { color: var(--accent2); }
+
+  /* NO DATA */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Spinner for active */
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Connection banner */
+  .conn-banner {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent2);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    z-index: 100;
+  }
+  .conn-banner.show { display: block; }
+
+  /* Scrollbar reset for panels */
+  .panel { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    .stats-strip { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <span class="logo-text">Batch<span>Forge</span></span>
+  </div>
+  <div class="header-meta">
+    <span><span class="status-dot" id="dot"></span><span id="status-text">connecting…</span></span>
+    <span id="server-addr" style="color:#4a5568">—</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- LEFT: CLIENT PANEL -->
+  <div class="panel">
+    <div class="panel-inner">
+      <div class="panel-title">Client — <em id="my-ip" style="font-style:normal;color:var(--accent4)">this device</em></div>
+
+      <!-- FORM -->
+      <div class="form-grid">
+        <div class="field">
+          <label>Job Type</label>
+          <select id="f-type">
+            <option value="image_resize">Image Resize</option>
+            <option value="ml_inference">ML Inference</option>
+            <option value="video_transcode">Video Transcode</option>
+            <option value="pdf_export">PDF Export</option>
+            <option value="data_etl">Data ETL</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Size (KB)</label>
+          <input id="f-size" type="number" value="128" min="1" max="4096" />
+        </div>
+        <div class="field">
+          <label>Priority</label>
+          <select id="f-priority">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Count</label>
+          <input id="f-count" type="number" value="3" min="1" max="20" />
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="submitBatch()">⚡ Submit Batch</button>
+        <button class="btn btn-secondary" onclick="randomFill()">⟳ Random Fill</button>
+      </div>
+
+      <!-- TX indicator -->
+      <div id="tx-bar" style="height:2px;background:var(--border);border-radius:2px;margin-bottom:28px;overflow:hidden;">
+        <div id="tx-fill" style="height:100%;width:0;background:var(--accent);transition:width .3s;"></div>
+      </div>
+
+      <!-- MY JOBS -->
+      <div class="jobs-header">
+        <span class="jobs-title">My Jobs <span id="my-count">0</span></span>
+        <button class="btn btn-danger" onclick="resetClient()">✕ Clear</button>
+      </div>
+      <div id="my-jobs"><div class="empty">No jobs yet — submit a batch above</div></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: SERVER PANEL -->
+  <div class="panel" style="background:var(--bg2); border-left: 1px solid var(--border)">
+    <div class="panel-inner">
+      <div class="panel-title">Server</div>
+
+      <!-- STATS STRIP -->
+      <div class="stats-strip">
+        <div class="stat-cell total">
+          <div class="stat-num" id="s-total">0</div>
+          <div class="stat-label">Total</div>
+        </div>
+        <div class="stat-cell active">
+          <div class="stat-num" id="s-active">0</div>
+          <div class="stat-label">Active</div>
+        </div>
+        <div class="stat-cell done">
+          <div class="stat-num" id="s-done">0</div>
+          <div class="stat-label">Done</div>
+        </div>
+        <div class="stat-cell error">
+          <div class="stat-num" id="s-error">0</div>
+          <div class="stat-label">Errors</div>
+        </div>
+      </div>
+
+      <!-- THROUGHPUT -->
+      <div class="throughput-row">
+        <span class="throughput-label">Throughput</span>
+        <div class="throughput-track">
+          <div class="throughput-fill" id="tp-fill" style="width:0%"></div>
+        </div>
+        <span class="throughput-val" id="tp-val">0 KB/s</span>
+      </div>
+
+      <!-- CONNECTED CLIENTS -->
+      <div class="clients-section">
+        <div class="panel-title" style="margin-bottom:14px">Connected Clients</div>
+        <div id="clients-list"><div class="empty">No clients yet</div></div>
+      </div>
+
+      <!-- SERVER LOG -->
+      <div class="panel-title" style="margin-bottom:14px">Server Log</div>
+      <div class="log-box" id="log-box">
+        <div class="log-line">
+          <span class="log-ts">--:--:--</span>
+          <span class="log-msg info">Connecting to server…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="conn-banner" id="conn-banner">⚠ Connection lost — retrying…</div>
+
+<script>
+  const SERVER = `http://${location.hostname}:8080`;
+  let es = null;
+  let myJobs = [];
+  let submitting = false;
+
+  // ── SSE connection ──────────────────────────────────────────────
+  function connect() {
+    es = new EventSource(`${SERVER}/events`);
+    es.onopen = () => {
+      document.getElementById('dot').style.background = 'var(--accent)';
+      document.getElementById('status-text').textContent = 'server online';
+      document.getElementById('conn-banner').classList.remove('show');
+      document.getElementById('server-addr').textContent = `${location.hostname}:8080`;
+    };
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      renderServer(data);
+    };
+    es.onerror = () => {
+      document.getElementById('dot').style.background = 'var(--accent2)';
+      document.getElementById('status-text').textContent = 'reconnecting…';
+      document.getElementById('conn-banner').classList.add('show');
+      es.close();
+      setTimeout(connect, 3000);
+    };
+  }
+
+  connect();
+
+  // ── Fetch my jobs ───────────────────────────────────────────────
+  async function fetchMyJobs() {
+    try {
+      const r = await fetch(`${SERVER}/my-jobs`);
+      const d = await r.json();
+      myJobs = d.jobs || [];
+      renderMyJobs();
+    } catch {}
+  }
+
+  setInterval(fetchMyJobs, 1200);
+
+  // ── Submit batch ────────────────────────────────────────────────
+  async function submitBatch() {
+    if (submitting) return;
+    submitting = true;
+    const btn = document.querySelector('.btn-primary');
+    btn.textContent = '⏳ Sending…';
+    btn.disabled = true;
+
+    // TX animation
+    const fill = document.getElementById('tx-fill');
+    fill.style.width = '60%';
+
+    try {
+      const body = {
+        type: document.getElementById('f-type').value,
+        sizeKB: parseInt(document.getElementById('f-size').value),
+        priority: document.getElementById('f-priority').value,
+        count: parseInt(document.getElementById('f-count').value),
+      };
+      await fetch(`${SERVER}/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      fill.style.width = '100%';
+      setTimeout(() => { fill.style.width = '0'; }, 600);
+      await fetchMyJobs();
+    } catch (e) {
+      console.error(e);
+    }
+
+    btn.textContent = '⚡ Submit Batch';
+    btn.disabled = false;
+    submitting = false;
+  }
+
+  // ── Random fill ─────────────────────────────────────────────────
+  function randomFill() {
+    const types = ['image_resize','ml_inference','video_transcode','pdf_export','data_etl'];
+    const prios = ['low','normal','high','critical'];
+    const sizes = [64, 128, 256, 512, 1024];
+    document.getElementById('f-type').value = types[Math.floor(Math.random()*types.length)];
+    document.getElementById('f-priority').value = prios[Math.floor(Math.random()*prios.length)];
+    document.getElementById('f-size').value = sizes[Math.floor(Math.random()*sizes.length)];
+    document.getElementById('f-count').value = 1 + Math.floor(Math.random()*8);
+  }
+
+  // ── Reset client ────────────────────────────────────────────────
+  async function resetClient() {
+    await fetch(`${SERVER}/reset`, { method: 'POST' });
+    myJobs = [];
+    renderMyJobs();
+  }
+
+  // ── Render helpers ──────────────────────────────────────────────
+  function fmt(ts) {
+    const d = new Date(ts);
+    return d.toTimeString().slice(0,8);
+  }
+
+  function renderMyJobs() {
+    const el = document.getElementById('my-jobs');
+    document.getElementById('my-count').textContent = myJobs.length;
+    if (!myJobs.length) {
+      el.innerHTML = '<div class="empty">No jobs yet — submit a batch above</div>';
+      return;
+    }
+    el.innerHTML = myJobs.map(j => `
+      <div class="job-item status-${j.status}">
+        <span class="job-id">#${j.id}</span>
+        <span class="job-type">${j.type.replace('_',' ')}</span>
+        <span class="job-size">${j.sizeKB} KB</span>
+        <span class="job-badge badge-${j.status}">${j.status}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderServer(d) {
+    // Stats
+    document.getElementById('s-total').textContent  = d.totalJobs;
+    document.getElementById('s-active').textContent = d.activeJobs;
+    document.getElementById('s-done').textContent   = d.completedJobs;
+    document.getElementById('s-error').textContent  = d.errorJobs;
+
+    // Throughput
+    const tp = d.throughputKBs;
+    const pct = Math.min(tp / 600 * 100, 100);
+    document.getElementById('tp-fill').style.width = pct + '%';
+    document.getElementById('tp-val').textContent = tp + ' KB/s';
+
+    // Clients
+    const cl = document.getElementById('clients-list');
+    if (!d.clients || !d.clients.length) {
+      cl.innerHTML = '<div class="empty">No clients connected</div>';
+    } else {
+      cl.innerHTML = d.clients.map(c => `
+        <div class="client-row">
+          <div class="client-dot"></div>
+          <span class="client-ip">${c.ip}</span>
+          <span class="client-stats">
+            <span class="ok">${c.done}✓</span>
+            ${c.error ? `<span class="err"> ${c.error}✗</span>` : ''}
+            <span> / ${c.total}</span>
+          </span>
+        </div>
+      `).join('');
+    }
+
+    // Log
+    if (d.log && d.log.length) {
+      const box = document.getElementById('log-box');
+      box.innerHTML = d.log.map(l => `
+        <div class="log-line">
+          <span class="log-ts">${l.ts.slice(11,19)}</span>
+          <span class="log-msg ${l.type}">${escHtml(l.msg)}</span>
+        </div>
+      `).join('');
+    }
+
+    // Refresh my jobs from server state
+    if (d.jobs) {
+      // Only update if we have a match (to avoid flicker)
+      const myIds = new Set(myJobs.map(j => j.id));
+      const updated = d.jobs.filter(j => myIds.has(j.id));
+      if (updated.length) {
+        updated.forEach(uj => {
+          const idx = myJobs.findIndex(j => j.id === uj.id);
+          if (idx >= 0) myJobs[idx] = uj;
+        });
+        renderMyJobs();
+      }
+    }
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>
